@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+httpx
+google-genai
+prometheus-client
+pydantic
+python-dotenv

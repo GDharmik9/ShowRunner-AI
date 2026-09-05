@@ -1,0 +1,102 @@
+# ==========================================
+# 1. Secrets & API Keys (CRITICAL)
+# ==========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+
+# Google Cloud Service Account Keys & Credentials
+*credential*.json
+*secret*.json
+*key*.json
+showrunner-key.json
+client_secrets.json
+
+# Grafana Tokens & Logs
+grafana_token.txt
+*.auth
+
+# ==========================================
+# 2. Python Backend & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==========================================
+# 3. Frontend (React / Vite / Node.js)
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Production Build Output
+dist/
+dist-ssr/
+*.local
+
+# Editor / Framework Cache
+.turbo
+.next
+.nuxt
+.cache
+
+# ==========================================
+# 4. OS & IDE Artifacts
+# ==========================================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# VS Code / Cloud Shell
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-workspace
+.project_root
+
+# System logs
+logs/
+*.log
