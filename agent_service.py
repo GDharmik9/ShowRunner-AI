@@ -37,6 +37,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def read_root():
+    return {
+        "service": "Showrunner AI Technical Director",
+        "status": "online",
+        "docs": "http://127.0.0.1:5000/docs",
+        "cluster_state": "http://127.0.0.1:5000/cluster/nodes"
+    }
+
 # -------------------------------------------------------------------------
 # IN-MEMORY CLUSTER STATE (Mimicking telemetry_emitter.py nodes)
 # -------------------------------------------------------------------------
@@ -182,26 +201,132 @@ CRITICAL OPERATIONAL RULES:
    After running a remediation tool, clearly summarize the result, the previous failed state, and verify the node has returned to healthy operations.
 """
 
+# class UserMessage(BaseModel):
+#     message: Optional[str] = None
+#     prompt: Optional[str] = None
+
+#     def get_text(self) -> str:
+#         return self.prompt or self.message or "Audit cluster health"
+
+# # @app.post("/agent/chat")
+# # async def handle_agent_turn(user_payload: UserMessage):
+# #     """
+# #     Main API endpoint for driving a Gemini Agent session. Coordinates the tool-calling loop.
+# #     """
+# #     if "genai" not in globals() or not hasattr(genai, "Client"):
+# #         # Fallback response if Google GenAI SDK is not fully authenticated or available
+# #         logger.warn("Google GenAI SDK not fully loaded. Running local mock solver...")
+# #         return handle_mock_chat_flow(user_payload.message)
+
+#     # api_key = os.getenv("GEMINI_API_KEY")
+#     # if not api_key:
+#     #     raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable is not configured.")
+
+# @app.post("/agent/chat")
+# async def handle_agent_turn(user_payload: UserMessage):
 class UserMessage(BaseModel):
-    message: str
+    message: Optional[str] = None
+    prompt: Optional[str] = None
+
+    def get_query(self) -> str:
+        # Accepts whichever field is provided (or defaults safely)
+        return self.message or self.prompt or "Audit cluster health"
+
 
 @app.post("/agent/chat")
 async def handle_agent_turn(user_payload: UserMessage):
-    """
-    Main API endpoint for driving a Gemini Agent session. Coordinates the tool-calling loop.
-    """
-    if "genai" not in globals() or not hasattr(genai, "Client"):
-        # Fallback response if Google GenAI SDK is not fully authenticated or available
-        logger.warn("Google GenAI SDK not fully loaded. Running local mock solver...")
-        return handle_mock_chat_flow(user_payload.message)
+    # Extract the string once — do not reference user_payload.message after this
+    query_text = user_payload.get_query()
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable is not configured.")
+    if not genai or not hasattr(genai, "Client"):
+        logger.warning("Google GenAI SDK unavailable. Utilizing local solver.")
+        return handle_mock_chat_flow(query_text)
+
+    try:
+        client = genai.Client(
+            vertexai=True,
+            project=GCP_PROJECT_ID,
+            location=GCP_LOCATION,
+        )
+
+        tools_list = [query_grafana_metrics, search_grafana_logs, remediate_render_node]
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            tools=tools_list,
+            temperature=0.2,
+        )
+
+        # 1. Use query_text directly
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=query_text,
+            config=config,
+        )
+
+        # 2. Use query_text for user role in history
+        chat_history = [
+            types.Content(role="user", parts=[types.Part.from_text(text=query_text)]),
+            response.candidates[0].content,
+        ]
+
+        max_turns = 5
+        current_turn = 0
+
+        while response.function_calls and current_turn < max_turns:
+            current_turn += 1
+            tool_responses = []
+
+            for call in response.function_calls:
+                t_name = call.name
+                t_args = call.args or {}
+                logger.info(f"Gemini invoked tool: {t_name} with args {t_args}")
+
+                if t_name == "query_grafana_metrics":
+                    result = query_grafana_metrics(**t_args)
+                elif t_name == "search_grafana_logs":
+                    result = search_grafana_logs(**t_args)
+                elif t_name == "remediate_render_node":
+                    result = remediate_render_node(**t_args)
+                else:
+                    result = f"Error: Tool '{t_name}' is not registered."
+
+                tool_responses.append(
+                    types.Part.from_function_response(
+                        name=t_name,
+                        response={"result": result},
+                    )
+                )
+
+            chat_history.append(types.Content(role="tool", parts=tool_responses))
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=chat_history,
+                config=config,
+            )
+            chat_history.append(response.candidates[0].content)
+
+        final_text = response.text if response.text else "Investigation completed."
+        return {
+            "status": "success",
+            "agent_response": final_text,
+            "resolution_events": RESOLUTION_EVENTS,
+        }
+
+    except Exception as err:
+        logger.warning(f"Vertex AI turn failed ({err}). Falling back to deterministic solver.")
+        return handle_mock_chat_flow(query_text)
+    user_text = user_payload.get_text()
+    if "genai" not in globals() or not hasattr(genai, "Client"):
+        logger.warn("Google GenAI SDK not fully loaded. Running local mock solver...")
+        return handle_mock_chat_flow(user_text)
 
     try:
         # Initialize Gemini Client (New modern google-genai SDK layout)
-        client = genai.Client(api_key=api_key)
+        client =  genai.Client(
+            vertexai=True,
+            project="stadiumflow-504913",
+            location="us-central1",
+        )
         
         # Configure tool definitions list
         tools_list = [query_grafana_metrics, search_grafana_logs, remediate_render_node]
@@ -217,13 +342,13 @@ async def handle_agent_turn(user_payload: UserMessage):
         model_name = "gemini-2.5-flash"  # Highly responsive and supports robust function calling
         response = client.models.generate_content(
             model=model_name,
-            contents=user_payload.message,
+            contents=user_text.message,
             config=config
         )
         
         # Execute tool loop if model returned tool/function calls
         chat_history = [
-            types.Content(role="user", parts=[types.Part.from_text(text=user_payload.message)]),
+            types.Content(role="user", parts=[types.Part.from_text(text=user_text.message)]),
             response.candidates[0].content
         ]
         
