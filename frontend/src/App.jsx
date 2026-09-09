@@ -1,9 +1,8 @@
 import StudioCommandCenter from './StudioCommandCenter';
-import './App.css';
 
 function App() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="h-screen overflow-hidden bg-slate-950 text-slate-100">
       <StudioCommandCenter />
     </div>
   );
