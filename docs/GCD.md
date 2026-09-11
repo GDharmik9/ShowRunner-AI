@@ -53,7 +53,45 @@ config = types.GenerateContentConfig(
 )
 ```
 
-## 6. Cloud Run Deployment (Future State)
+## 6. Cloud Run Deployment
+
+### Frontend-only deployment
+
+The backend is already deployed separately as `showrunner-backend`. For frontend
+changes, deploy only the `frontend/` directory to the existing `showrunner-ai`
+Cloud Run service:
+
+```bash
+cd frontend
+gcloud run deploy showrunner-ai \
+    --source . \
+    --region us-central1 \
+    --allow-unauthenticated
+cd ..
+```
+
+This uses `frontend/Dockerfile`, builds the React application, and serves it as
+a static site. It does not redeploy or modify `showrunner-backend`.
+
+Open the URL printed by Cloud Run and verify the dashboard loads. The current
+dashboard demo actions use local UI state; backend API wiring can be connected
+separately when needed.
+
+The root `Dockerfile` builds the Vite frontend and copies `frontend/dist` into
+the FastAPI image. `agent_service.py` serves that build at `/`, while the API
+remains available under `/agent/*` and `/cluster/*`. Deploy the root directory,
+not `frontend/` by itself.
+
+Build and test the frontend before deploying:
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run build
+cd ..
+```
+
+Deploy the combined service:
 ```bash
 gcloud run deploy showrunner-backend \
     --source . \
@@ -62,6 +100,14 @@ gcloud run deploy showrunner-backend \
     --allow-unauthenticated \
     --set-env-vars GOOGLE_CLOUD_PROJECT=stadiumflow-504913,GOOGLE_CLOUD_LOCATION=us-central1
 ```
+
+After deployment, open the URL printed by Cloud Run. Verify both paths:
+* `/` loads the Studio Command Center.
+* `/docs` loads the FastAPI documentation.
+* `/cluster/nodes` returns the backend cluster state.
+
+When only the frontend changes, repeat the same deployment. Cloud Run rebuilds
+the image and replaces the currently running revision with the new frontend.
 
 ## 7. Local ADC Setup
 ```bash
